@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QUANTUM PRO: NEURAL INTERFACE</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="intro-overlay">
+        <div id="intro-particle-container" style="position: absolute; inset: 0;"></div>
+        <div class="intro-text">INTRODUCING QUANTUM PRO</div>
+        <div class="mt-4 text-[9px] tracking-[5px] text-cyan-500 opacity-60">STARK SYSTEMS COLLABORATION</div>
+    </div>
+
+    <div id="boot-screen">
+        <div class="mb-8 text-center">
+            <h1 class="text-4xl font-black tracking-tighter mb-2">WELCOME TO QUANTUM PRO</h1>
+            <p class="text-xs text-cyan-500 font-mono">NEURAL INTERFACE v12.5.0</p>
+        </div>
+        <button id="init-btn" class="btn text-xl px-12 py-6">INITIALIZE SYSTEM</button>
+        <div id="log-console" class="mt-8 font-mono text-[10px] text-gray-500 w-80 text-left h-32 border border-white/10 p-2 overflow-y-auto">
+            > Ready for Biometric Handshake...
+        </div>
+    </div>
+
+    <video id="input_video" autoplay muted playsinline></video>
+    <canvas id="output_canvas"></canvas>
+
+    <div class="hud-ui flex flex-col justify-between" id="main-hud">
+        <div class="flex justify-between items-start">
+            <div class="glass" id="status-panel">
+                <div class="text-[9px] opacity-60">SYSTEM STATUS</div>
+                <div id="mode-display" class="text-xl font-black italic">PROTOCOL: OFFLINE</div>
+                <div id="voice-indicator" class="text-[10px] mt-1 font-bold">MIC: <span id="mic-status" class="text-red-500">OFFLINE</span></div>
+            </div>
+            <div class="glass text-right !border-l-0 !border-r-4 !border-yellow-400">
+                <div class="text-[9px] opacity-60">BIOMETRIC FEED</div>
+                <div id="eye-readout" class="text-white text-lg font-black">EYES: SCANNING</div>
+                <div id="scale-readout" class="text-[9px] font-mono text-yellow-400">SCALE_SYNC: 1.00</div>
+            </div>
+        </div>
+
+        <div id="ai-bubble" class="self-center glass border-2 border-cyan-400 hidden animate-pulse max-w-2xl">
+            <div class="text-[8px] text-cyan-400 mb-1 font-bold">QUANTO AI - DYNAMIC FLOW</div>
+            <div id="ai-text" class="text-white text-[11px] font-mono italic uppercase leading-relaxed"></div>
+        </div>
+
+        <div class="flex justify-center gap-4">
+            <button onclick="setMode('standard')" id="btn-std" class="btn">STANDARD</button>
+            <button onclick="setMode('stealth')" id="btn-stl" class="btn">STEALTH</button>
+            <button onclick="setMode('quantum')" id="btn-qnt" class="btn">QUANTUM MK-X</button>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,256 @@
+// GLOBAL FAILSAFE INTRO
+setTimeout(() => {
+    const intro = document.getElementById('intro-overlay');
+    const boot = document.getElementById('boot-screen');
+    if(intro) intro.style.opacity = '0';
+    setTimeout(() => { if(intro) intro.style.display = 'none'; if(boot) boot.style.display = 'flex'; }, 800);
+}, 4000);
+
+const videoElement = document.getElementById('input_video');
+const canvasElement = document.getElementById('output_canvas');
+const logConsole = document.getElementById('log-console');
+const aiBubble = document.getElementById('ai-bubble');
+const aiText = document.getElementById('ai-text');
+const micStatus = document.getElementById('mic-status');
+const eyeReadout = document.getElementById('eye-readout');
+const statusPanel = document.getElementById('status-panel');
+
+let scene, camera, renderer, helmetStd, helmetQuantum;
+let currentMode = 'standard';
+let eyesClosedStart = null;
+let audioCtx, osc;
+let isSystemSpeaking = false;
+
+// SPEECH CONTROL STATE
+let speechChunks = [];
+let currentChunkIndex = 0;
+let isSpeechPaused = false;
+
+const log = (msg) => {
+    const entry = document.createElement('div');
+    entry.innerText = `> ${msg}`;
+    logConsole.appendChild(entry);
+    logConsole.scrollTop = logConsole.scrollHeight;
+};
+
+function runIntro3D() {
+    if (typeof THREE === 'undefined') return;
+    const container = document.getElementById('intro-particle-container');
+    const scene = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const ren = new THREE.WebGLRenderer({ alpha: true });
+    ren.setSize(window.innerWidth, window.innerHeight);
+    container.appendChild(ren.domElement);
+    const geo = new THREE.BufferGeometry();
+    const posArr = new Float32Array(2000 * 3);
+    for(let i=0; i<2000*3; i++) posArr[i] = (Math.random()-0.5)*10;
+    geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    const points = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x00f3ff, size: 0.02 }));
+    scene.add(points);
+    cam.position.z = 2;
+    function anim() { if (document.getElementById('intro-overlay').style.display === 'none') return; requestAnimationFrame(anim); points.rotation.y += 0.01; ren.render(scene, cam); }
+    anim();
+}
+
+// --- SPEECH SYSTEM (DYNAMIC OVERRIDE) ---
+function speak(text) {
+    window.speechSynthesis.cancel();
+    isSpeechPaused = false;
+    // Break text into clean chunks
+    speechChunks = text.match(/[^.!?]+[.!?]*/g) || [text];
+    currentChunkIndex = 0;
+    processSpeechQueue();
+}
+
+function processSpeechQueue() {
+    if (currentChunkIndex >= speechChunks.length || isSpeechPaused) {
+        if (!isSpeechPaused) {
+            isSystemSpeaking = false;
+            setTimeout(() => { if(!isSystemSpeaking) aiBubble.classList.add('hidden'); }, 5000);
+        }
+        return;
+    }
+    isSystemSpeaking = true;
+    aiBubble.classList.remove('hidden');
+    const textToSay = speechChunks[currentChunkIndex].trim();
+    aiText.innerText = textToSay;
+    
+    const utter = new SpeechSynthesisUtterance(textToSay);
+    utter.pitch = 0.9; utter.rate = 1.05;
+    utter.onend = () => { 
+        if (!isSpeechPaused) {
+            currentChunkIndex++; 
+            processSpeechQueue(); 
+        }
+    };
+    window.speechSynthesis.speak(utter);
+}
+
+// --- AI INTELLIGENCE CORE ---
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = SpeechRecognition ? new SpeechRecognition() : null;
+if (recognition) {
+    recognition.continuous = true;
+    recognition.lang = 'en-US';
+    recognition.onresult = async (event) => {
+        const query = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
+        
+        // 1. STOP COMMAND: Immediate Kill + Memory Retention for 'Start'
+        if (query === "stop") {
+            isSpeechPaused = true;
+            window.speechSynthesis.cancel();
+            log("Quanto Halted. Awaiting new instructions or 'Start'.");
+            return;
+        }
+
+        // 2. START COMMAND: Resume only if no new question was asked
+        if (query === "start") {
+            if (isSpeechPaused && speechChunks.length > 0) {
+                isSpeechPaused = false;
+                log("Resuming current data stream...");
+                processSpeechQueue();
+            }
+            return;
+        }
+
+        // 3. FOCUS SHIFT: If any other word is said, clear old speech and answer the new question
+        if (currentMode === 'quantum') {
+            log("Shifting Focus to: " + query);
+            
+            // Clear previous answer entirely
+            isSpeechPaused = false; 
+            window.speechSynthesis.cancel();
+            speechChunks = []; 
+            currentChunkIndex = 0;
+
+            if (query.includes("time")) {
+                speak("The time is exactly " + new Date().toLocaleTimeString());
+            } else if (query.includes("weather")) {
+                try {
+                    const res = await fetch('https://wttr.in/?format=3');
+                    const txt = await res.text();
+                    speak("Condition Analysis: " + txt);
+                } catch(err) { speak("Local sensors indicate 24 degrees Celsius."); }
+            } else {
+                let q = query.replace(/quanto|who is|what is|search for|is /g, "").trim();
+                try {
+                    const s = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&origin=*`);
+                    const sd = await s.json();
+                    const c = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(sd.query.search[0].title)}`);
+                    const cd = await c.json();
+                    speak(cd.extract);
+                } catch(err) { speak("Accessing global data streams for " + query); }
+            }
+        }
+    };
+    recognition.onend = () => { if (currentMode === 'quantum') recognition.start(); };
+}
+
+// --- STEALTH SOUND ---
+function playVanishEffect() {
+    if (!audioCtx) return;
+    const vOsc = audioCtx.createOscillator();
+    const vGain = audioCtx.createGain();
+    vOsc.type = 'sine';
+    vOsc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+    vOsc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.6);
+    vGain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+    vGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
+    vOsc.connect(vGain); vGain.connect(audioCtx.destination);
+    vOsc.start(); vOsc.stop(audioCtx.currentTime + 0.6);
+}
+
+window.setMode = (mode) => {
+    currentMode = mode;
+    if (mode === 'stealth') playVanishEffect();
+    document.querySelectorAll('.btn').forEach(b => b.classList.remove('btn-active'));
+    const btn = document.getElementById(mode === 'standard' ? 'btn-std' : (mode === 'stealth' ? 'btn-stl' : 'btn-qnt'));
+    if(btn) btn.classList.add('btn-active');
+    document.getElementById('mode-display').innerText = `PROTOCOL: ${mode.toUpperCase()}`;
+    if (mode === 'quantum') {
+        micStatus.innerText = "ACTIVE"; micStatus.className = "text-green-400 animate-pulse";
+        try { recognition.start(); } catch(e) {}
+        speak("Hello! Boss Quanto this side how may i help you today");
+    } else {
+        micStatus.innerText = "OFFLINE"; micStatus.className = "text-red-500";
+        try { recognition.stop(); } catch(e) {}
+    }
+};
+
+function initThree() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.localClippingEnabled = true;
+    const tc = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0.15), bc = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.1);
+    helmetStd = new THREE.Group();
+    helmetStd.add(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshBasicMaterial({ color: 0xccff00, wireframe: true, transparent: true, opacity: 0.5, clippingPlanes: [tc, bc] })));
+    scene.add(helmetStd);
+    helmetQuantum = new THREE.Group();
+    helmetQuantum.add(new THREE.Mesh(new THREE.TorusKnotGeometry(0.7, 0.2, 100, 16), new THREE.MeshBasicMaterial({ color: 0x00f3ff, wireframe: true, clippingPlanes: [tc, bc] })));
+    helmetQuantum.visible = false;
+    scene.add(helmetQuantum);
+    camera.position.z = 2.5;
+}
+
+function onResults(results) {
+    const now = performance.now();
+    if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+        if(helmetStd) helmetStd.visible = helmetQuantum.visible = false;
+        resetEyeProtocol(); return;
+    }
+    const l = results.multiFaceLandmarks[0];
+    const nose = l[1], tL = l[234], tR = l[454], fH = l[10], ch = l[152];
+    const hs = Math.sqrt(Math.pow(tR.x-tL.x, 2) + Math.pow(tR.y-tL.y, 2)) * 2.5;
+    document.getElementById('scale-readout').innerText = "SCALE_SYNC: " + hs.toFixed(2);
+    const active = currentMode === 'quantum' ? helmetQuantum : helmetStd;
+    const inactive = currentMode === 'quantum' ? helmetStd : helmetQuantum;
+    if (currentMode !== 'stealth') {
+        active.visible = true; inactive.visible = false;
+        active.scale.set(hs, hs*1.1, hs);
+        active.position.lerp(new THREE.Vector3((nose.x-0.5)*-2.8, (nose.y-0.5)*-2, -nose.z*5), 0.3);
+        active.rotation.x = THREE.MathUtils.lerp(active.rotation.x, Math.atan2(ch.y - fH.y, ch.z - fH.z) + Math.PI / 2, 0.2);
+        active.rotation.y = THREE.MathUtils.lerp(active.rotation.y, -Math.atan2(tR.z - tL.z, tR.x - tL.x), 0.2);
+    } else { active.visible = inactive.visible = false; }
+
+    const eL = Math.abs(l[159].y - l[145].y), eR = Math.abs(l[386].y - l[374].y);
+    if (eL < 0.013 && eR < 0.013) {
+        if (!eyesClosedStart) eyesClosedStart = now;
+        if (now - eyesClosedStart >= 1000) {
+            statusPanel.classList.add('alert-strobe');
+            eyeReadout.innerText = "CRITICAL WARNING: EYES CLOSED!";
+            eyeReadout.style.color = "red";
+            if(!osc && audioCtx) { osc=audioCtx.createOscillator(); osc.type='sawtooth'; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.connect(audioCtx.destination); osc.start(); }
+        } else { eyeReadout.innerText = "EYES: CLOSED"; eyeReadout.style.color = "yellow"; }
+    } else { resetEyeProtocol(); }
+}
+
+function resetEyeProtocol() {
+    eyesClosedStart = null; if(osc){ try{osc.stop();}catch(e){} osc=null;}
+    statusPanel.classList.remove('alert-strobe');
+    eyeReadout.innerText = "EYES: OPEN"; eyeReadout.style.color = "white";
+}
+
+document.getElementById('init-btn').addEventListener('click', async () => {
+    log("Initializing Core...");
+    try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+        await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        initThree();
+        const faceMesh = new FaceMesh({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
+        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        faceMesh.onResults(onResults);
+        const cam = new Camera(videoElement, { onFrame: async () => { await faceMesh.send({image: videoElement}); }, width: 1280, height: 720 });
+        await cam.start();
+        document.getElementById('boot-screen').style.display = 'none';
+        document.getElementById('main-hud').style.display = 'flex';
+        speak("Quantum Pro online. Ready for Boss.");
+        setMode('standard');
+        function anim() { requestAnimationFrame(anim); if(currentMode==='quantum' && helmetQuantum) helmetQuantum.rotation.z+=0.02; renderer.render(scene, camera); }
+        anim();
+    } catch (err) { alert("Initialization Error: " + err.message); }
+});
+
+window.addEventListener('load', runIntro3D);
